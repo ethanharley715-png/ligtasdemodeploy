@@ -13,6 +13,20 @@ import { UploadContext } from "./Upload-Context";
 
 type UploadState = "idle" | "uploading" | "success" | "error";
 
+const STAGED_PROGRESS_TICK_MS = 1000;
+
+function calculateStagedProgress(elapsedMs: number): number {
+    if (elapsedMs < 10_000) {
+        return 5 + (elapsedMs / 10_000) * 15;
+    }
+
+    if (elapsedMs < 60_000) {
+        return 20 + ((elapsedMs - 10_000) / 50_000) * 50;
+    }
+
+    return Math.min(90, 70 + ((elapsedMs - 60_000) / 150_000) * 20);
+}
+
 export interface UploadContextType {
     uploadState: UploadState;
     setUploadState: React.Dispatch<React.SetStateAction<UploadState>>;
@@ -38,6 +52,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
     const [uploadState, setUploadState] = useState<UploadState>("idle");
     const [uploadProgress, setUploadProgress] = useState(0);
     const abortControllerRef = useRef<AbortController | null>(null);
+    const stagedProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const [errorMessage, setErrorMessage] = useState("");
     const [result, setResult] = useState<UploadReportSuccess | null>(null);
     const [startTime, setStartTime] = useState<number | null>(null);
@@ -57,10 +72,28 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
         rule_scan_unavailable: t("uploadErrorRuleUnavailable"),
     };
 
+    function stopStagedProgress() {
+        if (stagedProgressTimerRef.current) {
+            clearInterval(stagedProgressTimerRef.current);
+            stagedProgressTimerRef.current = null;
+        }
+    }
+
+    function startStagedProgress(startedAt: number) {
+        stopStagedProgress();
+        setUploadProgress((current) => Math.max(current, 5));
+        stagedProgressTimerRef.current = setInterval(() => {
+            const stagedProgress = Math.floor(calculateStagedProgress(Date.now() - startedAt));
+            setUploadProgress((current) => Math.max(current, stagedProgress));
+        }, STAGED_PROGRESS_TICK_MS);
+    }
+
     async function startUpload(selectedFile: File) {
+        const startedAt = Date.now();
         setUploadState("uploading");
         setUploadProgress(0);
-        setStartTime(Date.now());
+        setStartTime(startedAt);
+        startStagedProgress(startedAt);
 
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -89,7 +122,9 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
                         file: compressedFile,
                         token:
                             (localStorage.getItem("ligtas.jwt") ?? "").trim() || undefined,
-                        onProgress: setUploadProgress,
+                        onProgress: (progress) => {
+                            setUploadProgress((current) => Math.max(current, progress));
+                        },
                         scanMode: "ai",
                         aiLocationMode: "full",
                         signal: controller.signal,
@@ -127,14 +162,17 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
                     setUploadState("error");
                     setErrorMessage(message);
                 } finally {
+                    stopStagedProgress();
                     abortControllerRef.current = null;
                 }
         } catch {
+            stopStagedProgress();
             setUploadState("error");
         }
     }
 
     function cancelUpload() {
+        stopStagedProgress();
         abortControllerRef.current?.abort();
         setUploadState("idle");
         setUploadProgress(0);
