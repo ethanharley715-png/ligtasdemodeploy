@@ -1,0 +1,5 @@
+CREATE TYPE "IssueReviewStatus" AS ENUM ('OPEN', 'COMPLETED', 'FALSE_POSITIVE');
+
+ALTER TABLE "Issue"
+ADD COLUMN "reviewStatus" "IssueReviewStatus" NOT NULL DEFAULT 'OPEN',
+ADD COLUMN "reviewedAt" TIMESTAMP(3);

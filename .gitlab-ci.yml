@@ -1,0 +1,141 @@
+# Ligtas QC - CI/CD Pipeline
+# Triggers on push to main and development branches
+
+default:
+  image: node:20-alpine
+  tags:
+    - general-docker
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "development"
+
+stages:
+  - install
+  - lint
+  - typecheck
+  - test
+  - build
+  - deploy
+
+# Cache node_modules (separate keys avoid frontend/backend overwriting)
+# Stage 1 - Install (cache only; artifacts too large for node_modules)
+install:frontend:
+  stage: install
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-frontend
+    paths:
+      - frontend/node_modules/
+  script:
+    - cd frontend && npm ci
+
+install:backend:
+  stage: install
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-backend
+    paths:
+      - backend/node_modules/
+  script:
+    - cd backend && npm ci && npx prisma generate
+
+# Stage 2 - Lint (uses cache from install)
+lint:frontend:
+  stage: lint
+  needs: [install:frontend]
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-frontend
+    paths:
+      - frontend/node_modules/
+  script:
+    - cd frontend && npm ci && npm run lint
+
+lint:backend:
+  stage: lint
+  needs: [install:backend]
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-backend
+    paths:
+      - backend/node_modules/
+  script:
+    - cd backend && npm ci && npm run lint
+
+# Stage 3 - Type Check
+typecheck:frontend:
+  stage: typecheck
+  needs: [install:frontend]
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-frontend
+    paths:
+      - frontend/node_modules/
+  script:
+    - cd frontend && npm ci && npm run typecheck
+
+typecheck:backend:
+  stage: typecheck
+  needs: [install:backend]
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-backend
+    paths:
+      - backend/node_modules/
+  script:
+    - cd backend && npm ci && npm run typecheck
+
+# Stage 4 - Test
+test:frontend:
+  stage: test
+  needs: [install:frontend]
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-frontend
+    paths:
+      - frontend/node_modules/
+  script:
+    - cd frontend && npm ci && npm run test:ci
+
+test:backend:
+  stage: test
+  needs: [install:backend]
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-backend
+    paths:
+      - backend/node_modules/
+  script:
+    - cd backend && npm ci && npm run test:ci
+
+# Stage 5 - Build
+build:frontend:
+  stage: build
+  needs: [lint:frontend, typecheck:frontend, test:frontend]
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-frontend
+    paths:
+      - frontend/node_modules/
+  script:
+    - cd frontend && npm ci && npm run build
+  artifacts:
+    paths:
+      - frontend/dist/
+
+build:backend:
+  stage: build
+  needs: [lint:backend, typecheck:backend, test:backend]
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}-backend
+    paths:
+      - backend/node_modules/
+  script:
+    - cd backend && npm ci && npm run build
+  artifacts:
+    paths:
+      - backend/dist/
+
+# Stage 6 - Deploy (main only)
+deploy-staging:
+  stage: deploy
+  needs: [build:frontend, build:backend]
+  script:
+    - echo "Deploy to staging - configure your deployment target"
+    - echo "Use CI/CD variables - DATABASE_URL, JWT_SECRET"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"

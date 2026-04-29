@@ -1,0 +1,212 @@
+// Ligtas QC - Database schema for reports, issues, users, analytics
+// Uses `users` table (friend's implementation) for authentication
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ReportStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum IssueType {
+  TEMPLATE_ARTIFACT
+  UNREMOVED_GUIDANCE
+  MISSING_INFORMATION
+  CONTRADICTION
+  LIMITATION_CONTRADICTION
+  INCOMPLETE_LIMITATIONS
+}
+
+enum TrainingExampleType {
+  GOOD
+  BAD
+}
+
+enum TrainingExampleStatus {
+  PENDING
+  TRAINED
+  FAILED
+}
+
+enum FeedbackRating {
+  CORRECT
+  NEEDS_IMPROVEMENT
+}
+
+enum IssueReviewStatus {
+  OPEN
+  COMPLETED
+  FALSE_POSITIVE
+}
+
+// Maps to existing `users` table (friend's login implementation)
+// user_type: "adm"=Admin, "tm"=Team Manager, "usr"=Consultant
+// managed_by_user_id: links Consultant to their Team Manager (admin-only can assign)
+model UserAccount {
+  id                     Int           @id @default(autoincrement())
+  email                  String        @unique
+  name                   String?
+  password_hash          String
+  user_type              String // "adm" | "tm" | "usr"
+  reset_token_hash       String?
+  reset_token_expires_at DateTime?
+  managed_by_user_id     Int?
+  managed_by             UserAccount?  @relation("TeamMembers", fields: [managed_by_user_id], references: [id], onDelete: SetNull)
+  team_members           UserAccount[] @relation("TeamMembers")
+  teamId                 String?
+  team                   Team?         @relation("TeamUsers", fields: [teamId], references: [id], onDelete: SetNull)
+  managedTeam            Team?         @relation("TeamManager")
+
+  mfaEnabled     Boolean  @default(false)
+  mfaSecret      String?
+  mfaBackupCodes String?
+
+  reports          Report[]
+  reportSessions   ReportSession[]
+  trainingExamples TrainingExample[]
+  adminFeedbacks   AdminFeedback[]
+
+  @@index([teamId])
+  @@map("users")
+}
+
+model Report {
+  id                    String       @id @default(cuid())
+  fileName              String
+  fileSizeBytes         Int?
+  status                ReportStatus @default(PROCESSING)
+  uploadedAt            DateTime     @default(now())
+  analyzedAt            DateTime?
+  processingTimeSeconds Int?
+  userAccountId         Int?
+  userAccount           UserAccount? @relation(fields: [userAccountId], references: [id], onDelete: SetNull)
+  reportSessionId       String?      @unique
+
+  totalIssues    Int     @default(0)
+  criticalIssues Int     @default(0)
+  passedQC       Boolean @default(false)
+
+  tagStatus      Int     @default(0)
+
+  issues    Issue[]
+  feedbacks AdminFeedback[]
+  aiIssues  AiIssue[]
+}
+
+model AiIssue {
+  id String @id @default(uuid())
+
+  reportId String
+  report   Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  type        IssueType
+  description String
+  confidence  Float
+
+  createdAt DateTime @default(now())
+
+  feedback Feedback[]
+
+  @@index([reportId])
+}
+
+model Feedback {
+  id String @id @default(uuid())
+
+  issueId String
+
+  rating  String
+  comment String?
+
+  createdAt DateTime @default(now())
+
+  issue AiIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+}
+
+model Issue {
+  id          String    @id @default(cuid())
+  type        IssueType
+  ruleKey     String?
+  description String    @db.Text
+  location    String
+  context     String    @db.Text
+  suggestion  String    @db.Text
+  pageNumber  Int?
+  sectionName String?
+  reviewStatus IssueReviewStatus @default(OPEN)
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  reportId    String
+  report      Report    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+}
+
+model ReportSession {
+  id             String      @id @default(uuid())
+  userAccountId  Int
+  filename       String
+  text           String
+  wordCount      Int
+  estimatedPages Int
+  createdAt      DateTime    @default(now())
+  expiresAt      DateTime
+  userAccount    UserAccount @relation(fields: [userAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userAccountId, expiresAt])
+}
+
+model Team {
+  id            String        @id @default(cuid())
+  name          String        @unique
+  managerUserId Int?          @unique
+  manager       UserAccount?  @relation("TeamManager", fields: [managerUserId], references: [id], onDelete: SetNull)
+  members       UserAccount[] @relation("TeamUsers")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model TrainingExample {
+  id            String                @id @default(cuid())
+  fileName      String
+  fileSizeBytes Int?
+  type          TrainingExampleType
+  status        TrainingExampleStatus @default(PENDING)
+  issueCount    Int                   @default(0)
+  uploadedAt    DateTime              @default(now())
+  uploadedById  Int
+  uploadedBy    UserAccount           @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  extractedText String?               @db.Text
+
+  @@index([type])
+  @@index([uploadedById])
+}
+
+model AdminFeedback {
+  id          String         @id @default(cuid())
+  reportId    String
+  report      Report         @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  rating      FeedbackRating
+  comment     String?        @db.Text
+  createdAt   DateTime       @default(now())
+  createdById Int
+  createdBy   UserAccount    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([reportId])
+  @@index([createdById])
+}
+
+model TrainingRun {
+  id            String    @id @default(cuid())
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  examplesUsed  Int       @default(0)
+  modelAccuracy Float?
+  status        String    @default("COMPLETED")
+}

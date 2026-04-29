@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma generate)",
+      "Bash(find \"c:\\\\Users\\\\saaad\\\\Downloads\\\\ligtas-team-project-development \\(1\\)\\\\ligtas-team-project-development\" -type f -name \"package.json\")",
+      "Bash(ls -la \"c:\\\\Users\\\\saaad\\\\Downloads\\\\ligtas-team-project-development \\(1\\)\\\\ligtas-team-project-development\\\\frontend\\\\src\")",
+      "Bash(find \"c:\\\\Users\\\\saaad\\\\Downloads\\\\ligtas-team-project-development \\(1\\)\\\\ligtas-team-project-development\\\\frontend\\\\src\\\\components\\\\types\" -type f -name \"*.ts\" -o -name \"*.tsx\")",
+      "Bash(ls \"c:/Users/saaad/Downloads/ligtas-team-project-development \\(1\\)/ligtas-team-project-development/frontend/src/components/\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\saaad\\Downloads\\ligtas-team-project-development (1)\\ligtas-team-project-development\\frontend\\src\\components"
+    ]
+  }
+}
